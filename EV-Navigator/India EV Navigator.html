@@ -1,0 +1,683 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <!-- Chosen Palette: Clean Energy Green & Neutral Gray -->
+    <!-- Application Structure Plan: The application follows a user-centric flow: Landing Page -> Optional Login/Sign-up -> Main Dashboard. The core of the app is a dual-view dashboard that the user can toggle between an interactive Map View (for spatial awareness and route planning) and a detailed List View (for quick, scannable comparison of station details). This structure was chosen to provide maximum flexibility, allowing users to consume location-based data in the format that best suits their immediate needs. A non-intrusive filter modal provides powerful data refinement without cluttering the main interface. -->
+    <!-- Visualization & Content Choices: 1. Station Data (Spatial) -> Goal: Locate -> Leaflet.js Map with custom Canvas/CSS markers -> Interaction: Click for detailed pop-up. Justification: Provides essential geographical context. 2. Station Data (Comparative) -> Goal: Compare -> Dynamic HTML/CSS Card List -> Interaction: Clickable to focus map, sortable. Justification: Offers a dense, easy-to-scan format for comparing details like cost and availability. 3. Filtering Criteria -> Goal: Refine Data -> Interactive Modal with HTML inputs -> Interaction: User selections dynamically update both Map and List views. Justification: Consolidates complex filtering options into a single, clean interface. -->
+    <!-- CONFIRMATION: NO SVG graphics used. NO Mermaid JS used. -->
+    <title>India EV Charging Navigator</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin="" />
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css" xintegrity="sha512-DTOQO9RWCH3ppGqcWaEA1BIZOC6xxalwEsw9c2QQeAIftl+Vegovlnee1c9QX4TctnWMn13TZye+giMm8e2LwA==" crossorigin="anonymous" referrerpolicy="no-referrer" />
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
+        body {
+            font-family: 'Inter', sans-serif;
+        }
+        .leaflet-popup-content-wrapper {
+            border-radius: 12px;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+        }
+        .leaflet-popup-content {
+            margin: 15px;
+            font-family: 'Inter', sans-serif;
+            width: auto !important;
+        }
+        .leaflet-popup-close-button {
+            padding: 8px 8px 0 0 !important;
+        }
+        .pulse {
+            animation: pulse-animation 2s infinite;
+        }
+        @keyframes pulse-animation {
+            0% { box-shadow: 0 0 0 0 rgba(22, 163, 74, 0.7); }
+            70% { box-shadow: 0 0 0 10px rgba(22, 163, 74, 0); }
+            100% { box-shadow: 0 0 0 0 rgba(22, 163, 74, 0); }
+        }
+        .user-location-pulse {
+            animation: user-pulse-animation 2s infinite;
+        }
+        @keyframes user-pulse-animation {
+            0% { box-shadow: 0 0 0 0 rgba(59, 130, 246, 0.7); }
+            70% { box-shadow: 0 0 0 12px rgba(59, 130, 246, 0); }
+            100% { box-shadow: 0 0 0 0 rgba(59, 130, 246, 0); }
+        }
+        .bomb-shake {
+            animation: bomb-shake-animation 0.5s;
+        }
+        @keyframes bomb-shake-animation {
+            0% { transform: translate(1px, 1px) rotate(0deg); }
+            10% { transform: translate(-1px, -2px) rotate(-1deg); }
+            20% { transform: translate(-3px, 0px) rotate(1deg); }
+            30% { transform: translate(3px, 2px) rotate(0deg); }
+            40% { transform: translate(1px, -1px) rotate(1deg); }
+            50% { transform: translate(-1px, 2px) rotate(-1deg); }
+            60% { transform: translate(-3px, 1px) rotate(0deg); }
+            70% { transform: translate(3px, 1px) rotate(-1deg); }
+            80% { transform: translate(-1px, -1px) rotate(1deg); }
+            90% { transform: translate(1px, 2px) rotate(0deg); }
+            100% { transform: translate(1px, -2px) rotate(-1deg); }
+        }
+        .hidden { display: none; }
+        .transition-all { transition: all 0.3s ease-in-out; }
+        .filter-modal-enter { transform: translateY(100%); }
+        .custom-checkbox:checked {
+            background-color: #22c55e;
+            border-color: #22c55e;
+        }
+        .custom-checkbox:checked::after {
+            content: '✔';
+            color: white;
+            position: absolute;
+            left: 50%;
+            top: 50%;
+            transform: translate(-50%, -50%);
+            font-size: 12px;
+        }
+    </style>
+</head>
+<body class="bg-gray-100 flex flex-col h-screen overflow-hidden">
+
+    <div id="landing-page" class="absolute inset-0 bg-gradient-to-br from-green-400 to-teal-600 z-50 flex flex-col justify-center items-center p-8 text-white text-center transition-opacity duration-500">
+        <div class="max-w-md">
+            <i class="fas fa-bolt-lightning text-6xl mb-4 text-yellow-300"></i>
+            <h1 class="text-4xl md:text-5xl font-bold mb-2">Welcome to India EV Navigator</h1>
+            <p class="text-lg text-green-100 mb-8">Your real-time guide to EV charging stations across India. Find, charge, and go!</p>
+            <button id="get-started-btn" class="bg-white text-green-600 font-bold py-3 px-8 rounded-full shadow-lg hover:bg-gray-100 transform hover:scale-105 transition-transform">
+                Get Started <i class="fas fa-arrow-right ml-2"></i>
+            </button>
+        </div>
+    </div>
+
+    <div id="login-modal" class="hidden fixed inset-0 bg-black bg-opacity-50 z-40 flex justify-center items-center p-4 transition-opacity duration-300">
+        <div class="bg-white rounded-2xl shadow-2xl p-8 max-w-sm w-full transform scale-95 transition-transform duration-300">
+            <h2 class="text-2xl font-bold text-center text-gray-800 mb-2">Sign In</h2>
+            <p class="text-center text-gray-500 mb-6">Access the EV charging network.</p>
+            <form>
+                <div class="mb-4">
+                    <label for="email" class="block text-sm font-medium text-gray-700 mb-1">Email or Phone</label>
+                    <input type="email" id="email" class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-green-500 focus:border-green-500" placeholder="you@example.com">
+                </div>
+                <div class="mb-6">
+                    <label for="password" class="block text-sm font-medium text-gray-700 mb-1">Password</label>
+                    <input type="password" id="password" class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-green-500 focus:border-green-500" placeholder="••••••••">
+                </div>
+                <button type="button" id="sign-in-btn" class="w-full bg-green-500 text-white font-bold py-3 px-4 rounded-lg hover:bg-green-600 transition-colors">
+                    Sign In
+                </button>
+            </form>
+            <div class="text-center my-4"><span class="text-sm text-gray-400">OR</span></div>
+            <button id="guest-btn" class="w-full bg-gray-200 text-gray-700 font-bold py-3 px-4 rounded-lg hover:bg-gray-300 transition-colors">Continue as Guest</button>
+            <p class="text-xs text-center text-gray-500 mt-6">Don't have an account? <a href="#" id="go-to-signup-btn" class="text-green-600 font-semibold">Sign Up</a></p>
+        </div>
+    </div>
+
+    <div id="signup-modal" class="hidden fixed inset-0 bg-black bg-opacity-50 z-40 flex justify-center items-center p-4 transition-opacity duration-300">
+        <div class="bg-white rounded-2xl shadow-2xl p-8 max-w-sm w-full transform scale-95 transition-transform duration-300">
+            <h2 class="text-2xl font-bold text-center text-gray-800 mb-2">Create Account</h2>
+            <p class="text-center text-gray-500 mb-6">Join the EV revolution!</p>
+            <form>
+                 <div class="mb-4">
+                    <label for="signup-name" class="block text-sm font-medium text-gray-700 mb-1">Full Name</label>
+                    <input type="text" id="signup-name" class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-green-500 focus:border-green-500" placeholder="John Doe">
+                </div>
+                <div class="mb-4">
+                    <label for="signup-email" class="block text-sm font-medium text-gray-700 mb-1">Email or Phone</label>
+                    <input type="email" id="signup-email" class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-green-500 focus:border-green-500" placeholder="you@example.com">
+                </div>
+                <div class="mb-6">
+                    <label for="signup-password" class="block text-sm font-medium text-gray-700 mb-1">Password</label>
+                    <input type="password" id="signup-password" class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-green-500 focus:border-green-500" placeholder="••••••••">
+                </div>
+                <button type="button" id="sign-up-btn" class="w-full bg-green-500 text-white font-bold py-3 px-4 rounded-lg hover:bg-green-600 transition-colors">
+                    Create Account
+                </button>
+            </form>
+            <p class="text-xs text-center text-gray-500 mt-6">Already have an account? <a href="#" id="go-to-signin-btn" class="text-green-600 font-semibold">Sign In</a></p>
+        </div>
+    </div>
+
+     <div id="fact-bomb-modal" class="hidden fixed inset-0 bg-black bg-opacity-60 z-50 flex justify-center items-center p-4 transition-opacity duration-300">
+        <div class="bg-white rounded-2xl shadow-2xl p-6 max-w-md w-full transform scale-95 transition-transform duration-300 text-center relative border-4 border-yellow-400">
+            <div class="absolute -top-8 left-1/2 -translate-x-1/2 bg-gray-800 p-3 rounded-full border-4 border-white">
+                <i class="fas fa-bomb text-3xl text-white"></i>
+            </div>
+            <h2 class="text-2xl font-bold text-gray-800 mt-8 mb-2">Fun Fact Blast! 💣</h2>
+            <p id="fact-text" class="text-gray-600 mb-6 px-4">Did you know? The world's highest EV charging station is in India!</p>
+            <button id="close-fact-bomb-btn" class="w-full bg-gray-800 text-white font-bold py-2 px-4 rounded-lg hover:bg-gray-700 transition-colors">Got it!</button>
+        </div>
+    </div>
+
+    <div id="main-content" class="hidden h-screen flex-col">
+        <header class="bg-white shadow-md z-20">
+            <div class="container mx-auto px-4 py-3">
+                <div class="flex justify-between items-center">
+                    <div class="flex items-center space-x-3">
+                        <i class="fas fa-bolt-lightning text-2xl text-green-500"></i>
+                        <h1 class="text-xl font-bold text-gray-800 hidden sm:block">India EV Navigator</h1>
+                    </div>
+                    <div class="flex-1 max-w-lg mx-4">
+                         <div class="relative">
+                            <input type="text" id="search-input" placeholder="Search by name, city, state..." class="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-full focus:ring-2 focus:ring-green-400 focus:border-transparent transition">
+                            <i class="fas fa-search absolute left-4 top-1/2 -translate-y-1/2 text-gray-400"></i>
+                        </div>
+                    </div>
+                    <button id="open-filter-btn" class="flex items-center space-x-2 bg-gray-100 hover:bg-gray-200 px-4 py-2 rounded-full font-semibold text-gray-700 transition">
+                        <i class="fas fa-sliders-h"></i>
+                        <span class="hidden md:inline">Filters</span>
+                    </button>
+                </div>
+                <div class="mt-3">
+                    <div id="view-switcher" class="flex space-x-1 rounded-full bg-gray-200 p-1 max-w-xs mx-auto">
+                        <button data-view="map" class="view-btn flex-1 p-2 rounded-full text-sm font-semibold bg-white text-gray-800 shadow">
+                            <i class="fas fa-map-marked-alt mr-2"></i>Map View
+                        </button>
+                        <button data-view="list" class="view-btn flex-1 p-2 rounded-full text-sm font-semibold text-gray-600">
+                            <i class="fas fa-list mr-2"></i>List View
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </header>
+
+        <main class="flex-grow z-0 relative overflow-hidden">
+            <div id="list-view" class="absolute inset-0 bg-gray-50 z-10 transition-transform duration-300 transform translate-x-full">
+                <div id="list-content" class="h-full overflow-y-auto p-2 sm:p-4">
+                </div>
+            </div>
+            <div id="map-container" class="w-full h-full">
+                <div id="map" class="w-full h-full"></div>
+                <button id="locate-btn" class="absolute bottom-5 right-5 z-10 bg-white w-12 h-12 rounded-full shadow-lg flex justify-center items-center text-gray-600 hover:bg-gray-100 transition transform hover:scale-105" title="Find my location">
+                    <i class="fas fa-location-arrow text-lg"></i>
+                </button>
+            </div>
+        </main>
+    </div>
+
+    <div id="filter-modal" class="hidden fixed inset-0 bg-black bg-opacity-50 z-30 flex justify-center items-end">
+        <div id="filter-panel" class="bg-white w-full max-w-2xl rounded-t-2xl shadow-2xl p-6 transition-transform duration-300 filter-modal-enter">
+            <div class="flex justify-between items-center mb-6">
+                <h2 class="text-2xl font-bold text-gray-800">Filters</h2>
+                <button id="close-filter-btn" class="text-gray-400 hover:text-gray-600"><i class="fas fa-times fa-lg"></i></button>
+            </div>
+            <div class="space-y-6">
+                <div>
+                    <h3 class="font-semibold text-gray-700 mb-3">Station Status</h3>
+                    <div id="status-filter-group" class="flex space-x-2 rounded-lg bg-gray-100 p-1">
+                        <button data-status="all" class="filter-status-btn flex-1 p-2 rounded-md text-sm font-semibold bg-green-500 text-white">All</button>
+                        <button data-status="available" class="filter-status-btn flex-1 p-2 rounded-md text-sm font-semibold text-gray-600">Available</button>
+                        <button data-status="in-use" class="filter-status-btn flex-1 p-2 rounded-md text-sm font-semibold text-gray-600">In Use</button>
+                    </div>
+                </div>
+                <div>
+                    <h3 class="font-semibold text-gray-700 mb-3">Connector Type</h3>
+                    <div id="connector-filter-group" class="grid grid-cols-2 sm:grid-cols-3 gap-3">
+                        <label class="flex items-center space-x-3 p-3 bg-gray-50 rounded-lg border border-gray-200 hover:border-green-400 cursor-pointer">
+                            <input type="checkbox" value="CCS2" class="appearance-none relative h-5 w-5 border border-gray-300 rounded-md custom-checkbox">
+                            <span>CCS2</span>
+                        </label>
+                        <label class="flex items-center space-x-3 p-3 bg-gray-50 rounded-lg border border-gray-200 hover:border-green-400 cursor-pointer">
+                            <input type="checkbox" value="DC Fast" class="appearance-none relative h-5 w-5 border border-gray-300 rounded-md custom-checkbox">
+                            <span>DC Fast Charger</span>
+                        </label>
+                         <label class="flex items-center space-x-3 p-3 bg-gray-50 rounded-lg border border-gray-200 hover:border-green-400 cursor-pointer">
+                            <input type="checkbox" value="Type 2 AC" class="appearance-none relative h-5 w-5 border border-gray-300 rounded-md custom-checkbox">
+                            <span>Type 2 AC</span>
+                        </label>
+                    </div>
+                </div>
+            </div>
+            <div class="flex space-x-4 mt-8">
+                <button id="reset-filters-btn" class="flex-1 bg-gray-200 text-gray-700 font-bold py-3 px-4 rounded-lg hover:bg-gray-300 transition-colors">Reset</button>
+                <button id="apply-filters-btn" class="flex-1 bg-green-500 text-white font-bold py-3 px-4 rounded-lg hover:bg-green-600 transition-colors">Apply Filters</button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        document.addEventListener('DOMContentLoaded', () => {
+            const landingPage = document.getElementById('landing-page');
+            const loginModal = document.getElementById('login-modal');
+            const signupModal = document.getElementById('signup-modal');
+            const mainContent = document.getElementById('main-content');
+            const getStartedBtn = document.getElementById('get-started-btn');
+            const signInBtn = document.getElementById('sign-in-btn');
+            const guestBtn = document.getElementById('guest-btn');
+            const signUpBtn = document.getElementById('sign-up-btn');
+            const goToSignupBtn = document.getElementById('go-to-signup-btn');
+            const goToSigninBtn = document.getElementById('go-to-signin-btn');
+            const factBombModal = document.getElementById('fact-bomb-modal');
+            const factText = document.getElementById('fact-text');
+            const closeFactBombBtn = document.getElementById('close-fact-bomb-btn');
+            const filterModal = document.getElementById('filter-modal');
+            const filterPanel = document.getElementById('filter-panel');
+            const openFilterBtn = document.getElementById('open-filter-btn');
+            const closeFilterBtn = document.getElementById('close-filter-btn');
+            const applyFiltersBtn = document.getElementById('apply-filters-btn');
+            const resetFiltersBtn = document.getElementById('reset-filters-btn');
+            const locateBtn = document.getElementById('locate-btn');
+            const searchInput = document.getElementById('search-input');
+            const statusFilterGroup = document.getElementById('status-filter-group');
+            const viewSwitcher = document.getElementById('view-switcher');
+            const listView = document.getElementById('list-view');
+            const listContent = document.getElementById('list-content');
+            const mapContainer = document.getElementById('map-container');
+            
+            let currentFilters = { status: 'all', connectors: [] };
+            
+            const findUserLocation = () => {
+                navigator.geolocation.getCurrentPosition(position => {
+                    const { latitude, longitude } = position.coords;
+                    map.setView([latitude, longitude], 13);
+
+                    const userIcon = L.divIcon({
+                        className: 'custom-user-location-icon',
+                        html: `<div class="w-5 h-5 rounded-full bg-blue-500 border-2 border-white shadow-md user-location-pulse"></div>`,
+                        iconSize: [20, 20],
+                        iconAnchor: [10, 10]
+                    });
+
+                    if (userMarker) map.removeLayer(userMarker);
+                    userMarker = L.marker([latitude, longitude], { icon: userIcon }).addTo(map).bindPopup("Your Location").openPopup();
+                }, () => {
+                    console.log("Could not get user location. Showing default view of India.");
+                });
+            };
+            
+            const enterApp = () => {
+                loginModal.classList.add('hidden');
+                signupModal.classList.add('hidden');
+                document.body.classList.remove('overflow-hidden');
+                mainContent.classList.remove('hidden');
+                mainContent.classList.add('flex');
+                setTimeout(() => {
+                    map.invalidateSize();
+                    findUserLocation();
+                    setTimeout(showFactBomb, 5000); 
+                    setInterval(showFactBomb, 120000); 
+                }, 10);
+            };
+
+            getStartedBtn.addEventListener('click', () => {
+                landingPage.style.opacity = '0';
+                setTimeout(() => {
+                    landingPage.classList.add('hidden');
+                    loginModal.classList.remove('hidden');
+                    loginModal.querySelector('div').classList.add('scale-100');
+                }, 500);
+            });
+
+            signInBtn.addEventListener('click', enterApp);
+            guestBtn.addEventListener('click', enterApp);
+            signUpBtn.addEventListener('click', enterApp);
+
+            goToSignupBtn.addEventListener('click', (e) => {
+                e.preventDefault();
+                loginModal.classList.add('hidden');
+                signupModal.classList.remove('hidden');
+                signupModal.querySelector('div').classList.add('scale-100');
+            });
+
+            goToSigninBtn.addEventListener('click', (e) => {
+                e.preventDefault();
+                signupModal.classList.add('hidden');
+                loginModal.classList.remove('hidden');
+                loginModal.querySelector('div').classList.add('scale-100');
+            });
+            
+            const map = L.map('map', { zoomControl: false }).setView([21.1458, 79.0882], 5);
+            L.control.zoom({ position: 'bottomleft' }).addTo(map);
+            L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+                maxZoom: 19,
+                attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
+            }).addTo(map);
+
+            let chargingStations = [
+                { id: 1, name: "Elante Mall, Chandigarh", lat: 30.7055, lng: 76.8013, address: "178-178A, Purv Marg, Industrial Area Phase I, Chandigarh, 160002", status: "available", connectors: ["CCS2", "DC Fast"], cost: "₹18/kWh", ports: 4, photos: ["https://images.unsplash.com/photo-1617886322207-6f504e7472c5?q=80&w=2070&auto=format&fit=crop"] },
+                { id: 2, name: "Sector 17 Plaza, Chandigarh", lat: 30.7415, lng: 76.776, address: "Sector 17, Chandigarh, 160017", status: "in-use", connectors: ["Type 2 AC", "DC Fast"], cost: "₹15/kWh", ports: 2, photos: ["https://images.unsplash.com/photo-1621992129388-c5b76b1f2378?q=80&w=1974&auto=format&fit=crop"] },
+                { id: 3, name: "DLF CyberHub, Gurugram, Haryana", lat: 28.4949, lng: 77.0884, address: "DLF Cyber City, Phase 2, Gurugram, Haryana 122002", status: "available", connectors: ["Type 2 AC", "DC Fast"], cost: "₹20/kWh", ports: 10, photos: ["https://placehold.co/600x400/cccccc/ffffff?text=CyberHub"] },
+                { id: 4, name: "Ambience Mall, Gurugram, Haryana", lat: 28.5029, lng: 77.092, address: "NH 8, Ambience Island, Gurugram, Haryana 122002", status: "available", connectors: ["CCS2"], cost: "₹22/kWh", ports: 8, photos: ["https://placehold.co/600x400/cccccc/ffffff?text=Ambience+Mall"] },
+                { id: 5, name: "Manali Mall Road, Himachal Pradesh", lat: 32.2432, lng: 77.1892, address: "Mall Rd, Siyal, Manali, Himachal Pradesh 175131", status: "in-use", connectors: ["Type 2 AC"], cost: "₹25/kWh", ports: 3, photos: ["https://placehold.co/600x400/cccccc/ffffff?text=Manali"] },
+                { id: 6, name: "Shimla The Ridge, Himachal Pradesh", lat: 31.1048, lng: 77.1734, address: "The Ridge, Shimla, Himachal Pradesh 171001", status: "available", connectors: ["DC Fast"], cost: "₹23/kWh", ports: 4, photos: ["https://placehold.co/600x400/cccccc/ffffff?text=Shimla"] },
+                { id: 7, name: "Golden Temple Parking, Amritsar, Punjab", lat: 31.62, lng: 74.876, address: "Golden Temple Rd, Amritsar, Punjab 143006", status: "available", connectors: ["Type 2 AC"], cost: "₹16/kWh", ports: 12, photos: ["https://placehold.co/600x400/cccccc/ffffff?text=Amritsar"] },
+                { id: 8, name: "Ludhiana Sarabha Nagar Market, Punjab", lat: 30.8834, lng: 75.8203, address: "Sarabha Nagar, Ludhiana, Punjab 141001", status: "in-use", connectors: ["CCS2", "DC Fast"], cost: "₹19/kWh", ports: 6, photos: ["https://placehold.co/600x400/cccccc/ffffff?text=Ludhiana"] },
+                { id: 9, name: "Connaught Place, Delhi", lat: 28.6324, lng: 77.217, address: "A Block, Connaught Place, New Delhi, Delhi 110001", status: "available", connectors: ["DC Fast", "Type 2 AC"], cost: "₹20/kWh", ports: 8, photos: ["https://placehold.co/600x400/cccccc/ffffff?text=CP+Delhi"] },
+                { id: 10, name: "IGI Airport T3, Delhi", lat: 28.5562, lng: 77.1000, address: "Terminal 3, IGI Airport, New Delhi, Delhi 110037", status: "in-use", connectors: ["CCS2"], cost: "₹25/kWh", ports: 6, photos: ["https://placehold.co/600x400/cccccc/ffffff?text=IGI+Airport"] },
+                { id: 11, name: "BKC Business Center, Mumbai", lat: 19.0669, lng: 72.8682, address: "G Block, Bandra Kurla Complex, Mumbai, Maharashtra 400051", status: "available", connectors: ["Type 2 AC", "CCS2"], cost: "₹22/kWh", ports: 10, photos: ["https://placehold.co/600x400/cccccc/ffffff?text=BKC+Mumbai"] },
+                { id: 12, name: "Gateway of India, Mumbai", lat: 18.9220, lng: 72.8347, address: "Apollo Bandar, Colaba, Mumbai, Maharashtra 400001", status: "out-of-order", connectors: ["DC Fast"], cost: "₹24/kWh", ports: 4, photos: ["https://placehold.co/600x400/cccccc/ffffff?text=Gateway+of+India"] },
+                { id: 13, name: "Koramangala Social, Bengaluru", lat: 12.9352, lng: 77.6245, address: "118, 80 Feet Rd, Koramangala 4th Block, Bengaluru, Karnataka 560034", status: "in-use", connectors: ["DC Fast"], cost: "₹19/kWh", ports: 5, photos: ["https://placehold.co/600x400/cccccc/ffffff?text=Koramangala"] },
+                { id: 14, name: "Electronic City, Bengaluru", lat: 12.8452, lng: 77.6602, address: "Phase 1, Electronic City, Bengaluru, Karnataka 560100", status: "available", connectors: ["CCS2", "Type 2 AC"], cost: "₹15/kWh", ports: 20, photos: ["https://placehold.co/600x400/cccccc/ffffff?text=Electronic+City"] },
+                { id: 15, name: "T. Nagar Plaza, Chennai", lat: 13.039, lng: 80.233, address: "Panagal Park, T. Nagar, Chennai, Tamil Nadu 600017", status: "available", connectors: ["Type 2 AC"], cost: "₹17/kWh", ports: 8, photos: ["https://placehold.co/600x400/cccccc/ffffff?text=T+Nagar"] },
+                { id: 16, name: "Marina Beachfront, Chennai", lat: 13.053, lng: 80.282, address: "Kamaraj Salai, Triplicane, Chennai, Tamil Nadu 600005", status: "available", connectors: ["DC Fast"], cost: "₹21/kWh", ports: 3, photos: ["https://placehold.co/600x400/cccccc/ffffff?text=Marina+Beach"] },
+                { id: 17, name: "Park Street, Kolkata", lat: 22.551, lng: 88.358, address: "Allen Park, Park Street, Kolkata, West Bengal 700016", status: "out-of-order", connectors: ["CCS2", "Type 2 AC"], cost: "₹18/kWh", ports: 4, photos: ["https://placehold.co/600x400/cccccc/ffffff?text=Park+Street"] },
+                { id: 18, name: "New Town IT Hub, Kolkata", lat: 22.57, lng: 88.47, address: "Action Area I, New Town, Kolkata, West Bengal 700156", status: "available", connectors: ["DC Fast"], cost: "₹16/kWh", ports: 12, photos: ["https://placehold.co/600x400/cccccc/ffffff?text=New+Town"] },
+                { id: 19, name: "Hitech City, Hyderabad", lat: 17.448, lng: 78.391, address: "Jubilee Enclave, HITEC City, Hyderabad, Telangana 500081", status: "in-use", connectors: ["CCS2", "DC Fast"], cost: "₹20/kWh", ports: 15, photos: ["https://placehold.co/600x400/cccccc/ffffff?text=Hitech+City"] },
+                { id: 20, name: "Koregaon Park, Pune", lat: 18.536, lng: 73.89, address: "Lane No. 7, Koregaon Park, Pune, Maharashtra 411001", status: "available", connectors: ["Type 2 AC"], cost: "₹19/kWh", ports: 7, photos: ["https://placehold.co/600x400/cccccc/ffffff?text=Koregaon+Park"] },
+                { id: 21, name: "World Trade Park, Jaipur", lat: 26.853, lng: 75.805, address: "JLN Marg, Malviya Nagar, Jaipur, Rajasthan 302017", status: "available", connectors: ["CCS2", "DC Fast"], cost: "₹20/kWh", ports: 6, photos: ["https://placehold.co/600x400/cccccc/ffffff?text=WTP+Jaipur"] },
+                { id: 22, name: "MI Road Point, Jaipur", lat: 26.915, lng: 75.815, address: "Panch Batti, MI Road, Jaipur, Rajasthan 302001", status: "in-use", connectors: ["Type 2 AC"], cost: "₹17/kWh", ports: 3, photos: ["https://placehold.co/600x400/cccccc/ffffff?text=MI+Road"] },
+                { id: 23, name: "Vaishali Nagar Hub, Jaipur", lat: 26.9, lng: 75.75, address: "Gautam Marg, Vaishali Nagar, Jaipur, Rajasthan 302021", status: "available", connectors: ["DC Fast"], cost: "₹22/kWh", ports: 2, photos: ["https://placehold.co/600x400/cccccc/ffffff?text=Vaishali+Nagar"] },
+                { id: 24, name: "Jagatpura Station, Jaipur", lat: 26.82, lng: 75.85, address: "Model Town, Jagatpura, Jaipur, Rajasthan 302017", status: "available", connectors: ["Type 2 AC", "CCS2"], cost: "₹18/kWh", ports: 5, photos: ["https://placehold.co/600x400/cccccc/ffffff?text=Jagatpura"] },
+                { id: 25, name: "Sitapura Industrial, Jaipur", lat: 26.77, lng: 75.83, address: "Phase IV, Sitapura Industrial Area, Jaipur, Rajasthan 302022", status: "out-of-order", connectors: ["DC Fast"], cost: "₹19/kWh", ports: 4, photos: ["https://placehold.co/600x400/cccccc/ffffff?text=Sitapura"] },
+                { id: 26, name: "AlphaOne Mall, Ahmedabad", lat: 23.03, lng: 72.53, address: "Vastrapur Lake, Vastrapur, Ahmedabad, Gujarat 380015", status: "available", connectors: ["DC Fast", "Type 2 AC"], cost: "₹21/kWh", ports: 8, photos: ["https://placehold.co/600x400/cccccc/ffffff?text=AlphaOne+Mall"] },
+                { id: 27, name: "Gift City, Ahmedabad", lat: 23.16, lng: 72.7, address: "GIFT City, Gandhinagar, Gujarat 382355", status: "available", connectors: ["CCS2", "DC Fast"], cost: "₹25/kWh", ports: 15, photos: ["https://placehold.co/600x400/cccccc/ffffff?text=Gift+City"] },
+                { id: 28, name: "SG Highway Point, Ahmedabad", lat: 23.07, lng: 72.51, address: "Sarkhej - Gandhinagar Hwy, Bodakdev, Ahmedabad, Gujarat 380054", status: "in-use", connectors: ["Type 2 AC"], cost: "₹18/kWh", ports: 4, photos: ["https://placehold.co/600x400/cccccc/ffffff?text=SG+Highway"] },
+                { id: 29, name: "Maninagar Hub, Ahmedabad", lat: 22.99, lng: 72.6, address: "Jawahar Chowk, Maninagar, Ahmedabad, Gujarat 380008", status: "available", connectors: ["CCS2"], cost: "₹19/kWh", ports: 3, photos: ["https://placehold.co/600x400/cccccc/ffffff?text=Maninagar"] },
+                { id: 30, name: "Navrangpura Charger, Ahmedabad", lat: 23.03, lng: 72.56, address: "Commerce Six Roads, Navrangpura, Ahmedabad, Gujarat 380009", status: "available", connectors: ["DC Fast"], cost: "₹23/kWh", ports: 2, photos: ["https://placehold.co/600x400/cccccc/ffffff?text=Navrangpura"] },
+                { id: 31, name: "Hazratganj Station, Lucknow", lat: 26.84, lng: 80.94, address: "Mahatma Gandhi Marg, Hazratganj, Lucknow, Uttar Pradesh 226001", status: "in-use", connectors: ["Type 2 AC"], cost: "₹16/kWh", ports: 4, photos: ["https://placehold.co/600x400/cccccc/ffffff?text=Hazratganj"] },
+                { id: 32, name: "Gomti Nagar Hub, Lucknow", lat: 26.85, lng: 81.0, address: "Viraj Khand, Gomti Nagar, Lucknow, Uttar Pradesh 226010", status: "available", connectors: ["CCS2", "DC Fast"], cost: "₹20/kWh", ports: 10, photos: ["https://placehold.co/600x400/cccccc/ffffff?text=Gomti+Nagar"] },
+                { id: 33, name: "Indira Nagar Point, Lucknow", lat: 26.88, lng: 80.99, address: "B Block, Indira Nagar, Lucknow, Uttar Pradesh 226016", status: "out-of-order", connectors: ["DC Fast"], cost: "₹18/kWh", ports: 3, photos: ["https://placehold.co/600x400/cccccc/ffffff?text=Indira+Nagar"] },
+                { id: 34, name: "Alambagh Charger, Lucknow", lat: 26.8, lng: 80.9, address: "Sujanpura, Alambagh, Lucknow, Uttar Pradesh 226005", status: "available", connectors: ["Type 2 AC"], cost: "₹17/kWh", ports: 5, photos: ["https://placehold.co/600x400/cccccc/ffffff?text=Alambagh"] },
+                { id: 35, name: "Phoenix Mall, Lucknow", lat: 26.78, lng: 80.92, address: "Kanpur Road, Sector B, Bargawan, Lucknow, Uttar Pradesh 226012", status: "available", connectors: ["CCS2"], cost: "₹22/kWh", ports: 8, photos: ["https://placehold.co/600x400/cccccc/ffffff?text=Phoenix+Mall"] },
+                { id: 36, name: "Sitabuldi Market, Nagpur", lat: 21.148, lng: 79.08, address: "Variety Square, Sitabuldi, Nagpur, Maharashtra 440012", status: "available", connectors: ["DC Fast"], cost: "₹20/kWh", ports: 3, photos: ["https://placehold.co/600x400/cccccc/ffffff?text=Sitabuldi"] },
+                { id: 37, name: "MIHAN Tech Park, Nagpur", lat: 21.07, lng: 79.05, address: "Multi-modal International Cargo Hub and Airport at Nagpur, Nagpur, Maharashtra 441108", status: "available", connectors: ["CCS2", "DC Fast"], cost: "₹24/kWh", ports: 12, photos: ["https://placehold.co/600x400/cccccc/ffffff?text=MIHAN"] },
+                { id: 38, name: "Dharampeth Point, Nagpur", lat: 21.14, lng: 79.06, address: "West High Court Road, Dharampeth, Nagpur, Maharashtra 440010", status: "in-use", connectors: ["Type 2 AC"], cost: "₹18/kWh", ports: 4, photos: ["https://placehold.co/600x400/cccccc/ffffff?text=Dharampeth"] },
+                { id: 39, name: "Ramdaspeth Hub, Nagpur", lat: 21.13, lng: 79.07, address: "Central Bazaar Road, Ramdaspeth, Nagpur, Maharashtra 440010", status: "available", connectors: ["CCS2"], cost: "₹19/kWh", ports: 5, photos: ["https://placehold.co/600x400/cccccc/ffffff?text=Ramdaspeth"] },
+                { id: 40, name: "Wardha Road Station, Nagpur", lat: 21.09, lng: 79.06, address: "NH 44, Near Airport, Nagpur, Maharashtra 440025", status: "out-of-order", connectors: ["DC Fast"], cost: "₹21/kWh", ports: 2, photos: ["https://placehold.co/600x400/cccccc/ffffff?text=Wardha+Road"] },
+                { id: 41, name: "Lulu Mall, Kochi", lat: 10.027, lng: 76.308, address: "Edappally, Kochi, Kerala 682024", status: "available", connectors: ["CCS2", "DC Fast", "Type 2 AC"], cost: "₹25/kWh", ports: 15, photos: ["https://placehold.co/600x400/cccccc/ffffff?text=Lulu+Kochi"] },
+                { id: 42, name: "Infopark Campus, Kochi", lat: 10.01, lng: 76.35, address: "Kakkanad, Kochi, Kerala 682042", status: "available", connectors: ["Type 2 AC"], cost: "₹18/kWh", ports: 20, photos: ["https://placehold.co/600x400/cccccc/ffffff?text=Infopark"] },
+                { id: 43, name: "MG Road Hub, Kochi", lat: 9.97, lng: 76.28, address: "Mahatma Gandhi Road, Ernakulam, Kochi, Kerala 682011", status: "in-use", connectors: ["DC Fast"], cost: "₹22/kWh", ports: 4, photos: ["https://placehold.co/600x400/cccccc/ffffff?text=MG+Road"] },
+                { id: 44, name: "Fort Kochi Point, Kochi", lat: 9.965, lng: 76.24, address: "Princess Street, Fort Kochi, Kochi, Kerala 682001", status: "available", connectors: ["Type 2 AC"], cost: "₹20/kWh", ports: 2, photos: ["https://placehold.co/600x400/cccccc/ffffff?text=Fort+Kochi"] },
+                { id: 45, name: "Kaloor Station, Kochi", lat: 9.99, lng: 76.3, address: "Banerji Road, Kaloor, Kochi, Kerala 682017", status: "available", connectors: ["CCS2"], cost: "₹21/kWh", ports: 5, photos: ["https://placehold.co/600x400/cccccc/ffffff?text=Kaloor"] },
+                { id: 46, name: "Panjim Market, Goa", lat: 15.498, lng: 73.82, address: "Rua de Ourém, Panaji, Goa 403001", status: "available", connectors: ["Type 2 AC"], cost: "₹22/kWh", ports: 4, photos: ["https://placehold.co/600x400/cccccc/ffffff?text=Panjim"] },
+                { id: 47, name: "Calangute Beach Parking, Goa", lat: 15.54, lng: 73.76, address: "Calangute Beach Road, Calangute, Goa 403516", status: "in-use", connectors: ["DC Fast"], cost: "₹25/kWh", ports: 3, photos: ["https://placehold.co/600x400/cccccc/ffffff?text=Calangute"] },
+                { id: 48, name: "Margao Hub, Goa", lat: 15.28, lng: 73.96, address: "Near KTC Bus Stand, Margao, Goa 403601", status: "available", connectors: ["CCS2", "DC Fast"], cost: "₹23/kWh", ports: 6, photos: ["https://placehold.co/600x400/cccccc/ffffff?text=Margao"] },
+                { id: 49, name: "Vasco da Gama Port, Goa", lat: 15.39, lng: 73.84, address: "Mormugao Port, Vasco da Gama, Goa 403804", status: "out-of-order", connectors: ["Type 2 AC"], cost: "₹20/kWh", ports: 3, photos: ["https://placehold.co/600x400/cccccc/ffffff?text=Vasco"] },
+                { id: 50, name: "Mapusa Friday Market, Goa", lat: 15.59, lng: 73.81, address: "Mapusa Market Road, Mapusa, Goa 403507", status: "available", connectors: ["CCS2"], cost: "₹21/kWh", ports: 4, photos: ["https://placehold.co/600x400/cccccc/ffffff?text=Mapusa"] },
+                { id: 51, name: "Saket Select Citywalk, Delhi", lat: 28.528, lng: 77.219, address: "A-3, Saket District Centre, Saket, New Delhi, Delhi 110017", status: "available", connectors: ["CCS2", "DC Fast"], cost: "₹23/kWh", ports: 10, photos: ["https://placehold.co/600x400/cccccc/ffffff?text=Saket+Mall"] },
+                { id: 52, name: "Nehru Place IT Hub, Delhi", lat: 28.547, lng: 77.25, address: "Nehru Place Market, New Delhi, Delhi 110019", status: "in-use", connectors: ["Type 2 AC"], cost: "₹18/kWh", ports: 12, photos: ["https://placehold.co/600x400/cccccc/ffffff?text=Nehru+Place"] },
+                { id: 53, name: "Khan Market, Delhi", lat: 28.598, lng: 77.226, address: "61A, Khan Market, Rabindra Nagar, New Delhi, Delhi 110003", status: "available", connectors: ["DC Fast"], cost: "₹26/kWh", ports: 4, photos: ["https://placehold.co/600x400/cccccc/ffffff?text=Khan+Market"] },
+                { id: 54, name: "Dwarka Sector 12, Delhi", lat: 28.59, lng: 77.05, address: "Near Metro Station, Sector 12, Dwarka, New Delhi, Delhi 110078", status: "available", connectors: ["CCS2"], cost: "₹20/kWh", ports: 6, photos: ["https://placehold.co/600x400/cccccc/ffffff?text=Dwarka+S12"] },
+                { id: 55, name: "Rohini Adventure Island, Delhi", lat: 28.72, lng: 77.11, address: "Opposite Rithala Metro Station, Sector 10, Rohini, New Delhi, Delhi 110085", status: "out-of-order", connectors: ["Type 2 AC"], cost: "₹19/kWh", ports: 5, photos: ["https://placehold.co/600x400/cccccc/ffffff?text=Rohini"] },
+                { id: 56, name: "Phoenix Palladium, Mumbai", lat: 19.0, lng: 72.82, address: "462, Senapati Bapat Marg, Lower Parel, Mumbai, Maharashtra 400013", status: "available", connectors: ["CCS2", "DC Fast"], cost: "₹28/kWh", ports: 15, photos: ["https://placehold.co/600x400/cccccc/ffffff?text=Palladium+Mall"] },
+                { id: 57, name: "Andheri Lokhandwala, Mumbai", lat: 19.13, lng: 72.82, address: "Lokhandwala Complex, Andheri West, Mumbai, Maharashtra 400053", status: "in-use", connectors: ["Type 2 AC"], cost: "₹22/kWh", ports: 8, photos: ["https://placehold.co/600x400/cccccc/ffffff?text=Andheri"] },
+                { id: 58, name: "Powai Hiranandani, Mumbai", lat: 19.11, lng: 72.9, address: "Hiranandani Gardens, Powai, Mumbai, Maharashtra 400076", status: "available", connectors: ["DC Fast", "CCS2"], cost: "₹25/kWh", ports: 12, photos: ["https://placehold.co/600x400/cccccc/ffffff?text=Powai"] },
+                { id: 59, name: "Thane Viviana Mall, Mumbai", lat: 19.22, lng: 72.98, address: "Eastern Express Hwy, Thane West, Thane, Maharashtra 400601", status: "available", connectors: ["CCS2"], cost: "₹23/kWh", ports: 10, photos: ["https://placehold.co/600x400/cccccc/ffffff?text=Viviana+Thane"] },
+                { id: 60, name: "CSMT Station Parking, Mumbai", lat: 18.94, lng: 72.83, address: "Chhatrapati Shivaji Maharaj Terminus Area, Fort, Mumbai, Maharashtra 400001", status: "in-use", connectors: ["DC Fast"], cost: "₹26/kWh", ports: 5, photos: ["https://placehold.co/600x400/cccccc/ffffff?text=CSMT"] },
+                { id: 61, name: "UB City, Bengaluru", lat: 12.97, lng: 77.59, address: "24, Vittal Mallya Rd, KG Halli, D' Souza Layout, Ashok Nagar, Bengaluru, Karnataka 560001", status: "available", connectors: ["DC Fast"], cost: "₹30/kWh", ports: 8, photos: ["https://placehold.co/600x400/cccccc/ffffff?text=UB+City"] },
+                { id: 62, name: "Indiranagar 100ft Road, Bengaluru", lat: 12.97, lng: 77.64, address: "100 Feet Road, HAL 2nd Stage, Indiranagar, Bengaluru, Karnataka 560038", status: "in-use", connectors: ["Type 2 AC"], cost: "₹22/kWh", ports: 6, photos: ["https://placehold.co/600x400/cccccc/ffffff?text=Indiranagar"] },
+                { id: 63, name: "Whitefield ITPL, Bengaluru", lat: 12.98, lng: 77.74, address: "ITPL, Whitefield Main Rd, Pattandur Agrahara, Bengaluru, Karnataka 560066", status: "available", connectors: ["CCS2", "DC Fast"], cost: "₹20/kWh", ports: 25, photos: ["https://placehold.co/600x400/cccccc/ffffff?text=ITPL"] },
+                { id: 64, name: "Jayanagar 4th Block, Bengaluru", lat: 12.92, lng: 77.58, address: "10th Main Rd, Jayanagar 4th Block, Bengaluru, Karnataka 560011", status: "out-of-order", connectors: ["CCS2"], cost: "₹18/kWh", ports: 4, photos: ["https://placehold.co/600x400/cccccc/ffffff?text=Jayanagar"] },
+                { id: 65, name: "BIAL Airport, Bengaluru", lat: 13.19, lng: 77.7, address: "Kempegowda International Airport, Devanahalli, Bengaluru, Karnataka 560300", status: "available", connectors: ["DC Fast"], cost: "₹28/kWh", ports: 10, photos: ["https://placehold.co/600x400/cccccc/ffffff?text=BIAL+Airport"] },
+                { id: 66, name: "FC Road, Pune", lat: 18.52, lng: 73.84, address: "Fergusson College Rd, Shivajinagar, Pune, Maharashtra 411004", status: "in-use", connectors: ["Type 2 AC"], cost: "₹20/kWh", ports: 5, photos: ["https://placehold.co/600x400/cccccc/ffffff?text=FC+Road"] },
+                { id: 67, name: "Hinjewadi IT Park, Pune", lat: 18.59, lng: 73.73, address: "Rajiv Gandhi Infotech Park, Hinjawadi, Pune, Maharashtra 411057", status: "available", connectors: ["CCS2", "Type 2 AC"], cost: "₹18/kWh", ports: 30, photos: ["https://placehold.co/600x400/cccccc/ffffff?text=Hinjewadi"] },
+                { id: 68, name: "Amanora Mall, Pune", lat: 18.52, lng: 73.92, address: "Amanora Park Town, Hadapsar, Pune, Maharashtra 411028", status: "available", connectors: ["DC Fast"], cost: "₹24/kWh", ports: 8, photos: ["https://placehold.co/600x400/cccccc/ffffff?text=Amanora"] },
+                { id: 69, name: "Pune Station, Pune", lat: 18.52, lng: 73.87, address: "Agarkar Nagar, Pune, Maharashtra 411001", status: "available", connectors: ["CCS2", "DC Fast"], cost: "₹22/kWh", ports: 6, photos: ["https://placehold.co/600x400/cccccc/ffffff?text=Pune+Station"] },
+                { id: 70, name: "Viman Nagar Point, Pune", lat: 18.56, lng: 73.91, address: "Dutta Mandir Chowk, Viman Nagar, Pune, Maharashtra 411014", status: "in-use", connectors: ["Type 2 AC"], cost: "₹21/kWh", ports: 4, photos: ["https://placehold.co/600x400/cccccc/ffffff?text=Viman+Nagar"] },
+                { id: 71, name: "RK Beach, Vizag", lat: 17.71, lng: 83.32, address: "Ramakrishna Beach, Visakhapatnam, Andhra Pradesh 530002", status: "available", connectors: ["DC Fast"], cost: "₹22/kWh", ports: 3, photos: ["https://placehold.co/600x400/cccccc/ffffff?text=RK+Beach"] },
+                { id: 72, name: "Jagadamba Centre, Vizag", lat: 17.7, lng: 83.29, address: "Jagadamba Junction, Visakhapatnam, Andhra Pradesh 530020", status: "in-use", connectors: ["Type 2 AC"], cost: "₹18/kWh", ports: 5, photos: ["https://placehold.co/600x400/cccccc/ffffff?text=Jagadamba"] },
+                { id: 73, name: "Rushikonda IT Park, Vizag", lat: 17.78, lng: 83.38, address: "Rushikonda, Visakhapatnam, Andhra Pradesh 530045", status: "available", connectors: ["CCS2", "Type 2 AC"], cost: "₹19/kWh", ports: 10, photos: ["https://placehold.co/600x400/cccccc/ffffff?text=Rushikonda"] },
+                { id: 74, name: "Gajuwaka Industrial, Vizag", lat: 17.67, lng: 83.2, address: "Autonagar, Gajuwaka, Visakhapatnam, Andhra Pradesh 530012", status: "out-of-order", connectors: ["DC Fast"], cost: "₹20/kWh", ports: 6, photos: ["https://placehold.co/600x400/cccccc/ffffff?text=Gajuwaka"] },
+                { id: 75, name: "Siripuram Junction, Vizag", lat: 17.72, lng: 83.31, address: "Dutt Island, Siripuram, Visakhapatnam, Andhra Pradesh 530003", status: "available", connectors: ["CCS2"], cost: "₹21/kWh", ports: 4, photos: ["https://placehold.co/600x400/cccccc/ffffff?text=Siripuram"] },
+                { id: 76, name: "DB City Mall, Bhopal", lat: 23.23, lng: 77.43, address: "Arera Hills, Bhopal, Madhya Pradesh 462011", status: "available", connectors: ["DC Fast", "CCS2"], cost: "₹23/kWh", ports: 8, photos: ["https://placehold.co/600x400/cccccc/ffffff?text=DB+City"] },
+                { id: 77, name: "MP Nagar Zone 1, Bhopal", lat: 23.23, lng: 77.42, address: "Zone-I, Maharana Pratap Nagar, Bhopal, Madhya Pradesh 462011", status: "in-use", connectors: ["Type 2 AC"], cost: "₹19/kWh", ports: 6, photos: ["https://placehold.co/600x400/cccccc/ffffff?text=MP+Nagar"] },
+                { id: 78, name: "New Market Point, Bhopal", lat: 23.23, lng: 77.4, address: "TT Nagar, Bhopal, Madhya Pradesh 462003", status: "available", connectors: ["DC Fast"], cost: "₹21/kWh", ports: 3, photos: ["https://placehold.co/600x400/cccccc/ffffff?text=New+Market"] },
+                { id: 79, name: "BHEL Township, Bhopal", lat: 23.21, lng: 77.47, address: "BHEL, Bhopal, Madhya Pradesh 462022", status: "available", connectors: ["Type 2 AC"], cost: "₹17/kWh", ports: 5, photos: ["https://placehold.co/600x400/cccccc/ffffff?text=BHEL+Township"] },
+                { id: 80, name: "Arera Colony Hub, Bhopal", lat: 23.2, lng: 77.43, address: "E-3, Arera Colony, Bhopal, Madhya Pradesh 462016", status: "out-of-order", connectors: ["CCS2"], cost: "₹20/kWh", ports: 4, photos: ["https://placehold.co/600x400/cccccc/ffffff?text=Arera+Colony"] },
+                { id: 81, name: "GS Road Central, Guwahati", lat: 26.15, lng: 91.79, address: "Bhangagarh, Guwahati, Assam 781005", status: "available", connectors: ["DC Fast", "CCS2"], cost: "₹24/kWh", ports: 7, photos: ["https://placehold.co/600x400/cccccc/ffffff?text=GS+Road"] },
+                { id: 82, name: "Paltan Bazaar, Guwahati", lat: 26.18, lng: 91.75, address: "Near Railway Station, Paltan Bazaar, Guwahati, Assam 781008", status: "in-use", connectors: ["Type 2 AC"], cost: "₹20/kWh", ports: 4, photos: ["https://placehold.co/600x400/cccccc/ffffff?text=Paltan+Bazaar"] },
+                { id: 83, name: "Fancy Bazaar, Guwahati", lat: 26.18, lng: 91.73, address: "Lakhtokia, Fancy Bazaar, Guwahati, Assam 781001", status: "available", connectors: ["DC Fast"], cost: "₹22/kWh", ports: 3, photos: ["https://placehold.co/600x400/cccccc/ffffff?text=Fancy+Bazaar"] },
+                { id: 84, name: "Dispur Capital Complex, Guwahati", lat: 26.13, lng: 91.78, address: "Secretariat Road, Dispur, Guwahati, Assam 781006", status: "available", connectors: ["Type 2 AC"], cost: "₹18/kWh", ports: 6, photos: ["https://placehold.co/600x400/cccccc/ffffff?text=Dispur"] },
+                { id: 85, name: "Lokpriya Gopinath Airport, Guwahati", lat: 26.1, lng: 91.59, address: "Borjhar, Guwahati, Assam 781015", status: "available", connectors: ["CCS2"], cost: "₹25/kWh", ports: 5, photos: ["https://placehold.co/600x400/cccccc/ffffff?text=Guwahati+Airport"] },
+                { id: 86, name: "Lal Chowk, Srinagar", lat: 34.07, lng: 74.81, address: "Ghanta Ghar, Lal Chowk, Srinagar, Jammu and Kashmir 190001", status: "available", connectors: ["DC Fast"], cost: "₹26/kWh", ports: 3, photos: ["https://placehold.co/600x400/cccccc/ffffff?text=Lal+Chowk"] },
+                { id: 87, name: "Dal Lake Boulevard, Srinagar", lat: 34.09, lng: 74.83, address: "Boulevard Road, Srinagar, Jammu and Kashmir 190001", status: "in-use", connectors: ["Type 2 AC"], cost: "₹22/kWh", ports: 4, photos: ["https://placehold.co/600x400/cccccc/ffffff?text=Dal+Lake"] },
+                { id: 88, name: "Srinagar Airport, Srinagar", lat: 33.98, lng: 74.77, address: "Indira Gandhi Road, Humhama, Srinagar, Jammu and Kashmir 190007", status: "available", connectors: ["CCS2", "DC Fast"], cost: "₹28/kWh", ports: 5, photos: ["https://placehold.co/600x400/cccccc/ffffff?text=Srinagar+Airport"] },
+                { id: 89, name: "Rajbagh Hub, Srinagar", lat: 34.06, lng: 74.82, address: "Zero Bridge, Rajbagh, Srinagar, Jammu and Kashmir 190008", status: "out-of-order", connectors: ["Type 2 AC"], cost: "₹21/kWh", ports: 3, photos: ["https://placehold.co/600x400/cccccc/ffffff?text=Rajbagh"] },
+                { id: 90, name: "Nowhatta Old City, Srinagar", lat: 34.1, lng: 74.8, address: "Near Jamia Masjid, Nowhatta, Srinagar, Jammu and Kashmir 190002", status: "available", connectors: ["CCS2"], cost: "₹24/kWh", ports: 2, photos: ["https://placehold.co/600x400/cccccc/ffffff?text=Nowhatta"] },
+                { id: 91, name: "Vijay Nagar Square, Indore", lat: 22.75, lng: 75.89, address: "AB Road, Vijay Nagar, Indore, Madhya Pradesh 452010", status: "available", connectors: ["DC Fast", "CCS2"], cost: "₹22/kWh", ports: 8, photos: ["https://placehold.co/600x400/cccccc/ffffff?text=Vijay+Nagar"] },
+                { id: 92, name: "Rajwada Palace, Indore", lat: 22.71, lng: 75.85, address: "Rajwada, Indore, Madhya Pradesh 452002", status: "in-use", connectors: ["Type 2 AC"], cost: "₹18/kWh", ports: 4, photos: ["https://placehold.co/600x400/cccccc/ffffff?text=Rajwada"] },
+                { id: 93, name: "AB Road Hub, Indore", lat: 22.73, lng: 75.88, address: "Near C21 Mall, AB Road, Indore, Madhya Pradesh 452010", status: "available", connectors: ["DC Fast"], cost: "₹24/kWh", ports: 5, photos: ["https://placehold.co/600x400/cccccc/ffffff?text=AB+Road"] },
+                { id: 94, name: "Super Corridor, Indore", lat: 22.78, lng: 75.82, address: "Near TCS and Infosys, Super Corridor, Indore, Madhya Pradesh 452005", status: "available", connectors: ["Type 2 AC"], cost: "₹19/kWh", ports: 10, photos: ["https://placehold.co/600x400/cccccc/ffffff?text=Super+Corridor"] },
+                { id: 95, name: "Treasure Island Mall, Indore", lat: 22.7, lng: 75.87, address: "MG Road, South Tukoganj, Indore, Madhya Pradesh 452001", status: "available", connectors: ["CCS2"], cost: "₹23/kWh", ports: 6, photos: ["https://placehold.co/600x400/cccccc/ffffff?text=TI+Mall"] },
+                { id: 96, name: "Fraser Road, Patna", lat: 25.61, lng: 85.13, address: "Fraser Road Area, Patna, Bihar 800001", status: "available", connectors: ["DC Fast"], cost: "₹20/kWh", ports: 4, photos: ["https://placehold.co/600x400/cccccc/ffffff?text=Fraser+Road"] },
+                { id: 97, name: "Patliputra Colony, Patna", lat: 25.62, lng: 85.09, address: "Near P&M Mall, Patliputra Colony, Patna, Bihar 800013", status: "in-use", connectors: ["Type 2 AC"], cost: "₹17/kWh", ports: 3, photos: ["https://placehold.co/600x400/cccccc/ffffff?text=Patliputra"] },
+                { id: 98, name: "Gandhi Maidan, Patna", lat: 25.62, lng: 85.14, address: "North Gandhi Maidan Road, Patna, Bihar 800001", status: "available", connectors: ["CCS2", "DC Fast"], cost: "₹22/kWh", ports: 5, photos: ["https://placehold.co/600x400/cccccc/ffffff?text=Gandhi+Maidan"] },
+                { id: 99, name: "Boring Road, Patna", lat: 25.6, lng: 85.11, address: "Boring Road Chauraha, Sri Krishna Puri, Patna, Bihar 800001", status: "out-of-order", connectors: ["Type 2 AC"], cost: "₹18/kWh", ports: 4, photos: ["https://placehold.co/600x400/cccccc/ffffff?text=Boring+Road"] },
+                { id: 100, name: "P&M Mall, Patna", lat: 25.62, lng: 85.08, address: "Patliputra Industrial Area, Patna, Bihar 800013", status: "available", connectors: ["CCS2"], cost: "₹23/kWh", ports: 6, photos: ["https://placehold.co/600x400/cccccc/ffffff?text=P&M+Mall"] },
+                { id: 101, name: "Banjara Hills Rd 1, Hyderabad", lat: 17.41, lng: 78.44, address: "Road No. 1, Banjara Hills, Hyderabad, Telangana 500034", status: "in-use", connectors: ["DC Fast", "Type 2 AC"], cost: "₹24/kWh", ports: 7, photos: ["https://placehold.co/600x400/cccccc/ffffff?text=Banjara+Hills"] },
+                { id: 102, name: "Gachibowli Stadium, Hyderabad", lat: 17.45, lng: 78.34, address: "Old Mumbai Hwy, Gachibowli, Hyderabad, Telangana 500032", status: "available", connectors: ["CCS2", "DC Fast"], cost: "₹21/kWh", ports: 10, photos: ["https://placehold.co/600x400/cccccc/ffffff?text=Gachibowli"] },
+                { id: 103, name: "Secunderabad Station, Hyderabad", lat: 17.43, lng: 78.5, address: "Secunderabad Railway Station, Regimental Bazaar, Hyderabad, Telangana 500025", status: "available", connectors: ["DC Fast"], cost: "₹23/kWh", ports: 6, photos: ["https://placehold.co/600x400/cccccc/ffffff?text=Secunderabad"] },
+                { id: 104, name: "Jubilee Hills Check Post, Hyderabad", lat: 17.43, lng: 78.4, address: "Road No. 36, Jubilee Hills, Hyderabad, Telangana 500033", status: "available", connectors: ["CCS2"], cost: "₹25/kWh", ports: 5, photos: ["https://placehold.co/600x400/cccccc/ffffff?text=Jubilee+Hills"] },
+                { id: 105, name: "Charminar Parking, Hyderabad", lat: 17.36, lng: 78.47, address: "Near Charminar, Char Kaman, Ghansi Bazaar, Hyderabad, Telangana 500002", status: "out-of-order", connectors: ["Type 2 AC"], cost: "₹20/kWh", ports: 3, photos: ["https://placehold.co/600x400/cccccc/ffffff?text=Charminar"] },
+                { id: 106, name: "Express Avenue Mall, Chennai", lat: 13.06, lng: 80.26, address: "Whites Rd, Royapettah, Chennai, Tamil Nadu 600014", status: "available", connectors: ["CCS2", "DC Fast"], cost: "₹26/kWh", ports: 12, photos: ["https://placehold.co/600x400/cccccc/ffffff?text=Express+Avenue"] },
+                { id: 107, name: "Anna Nagar Tower, Chennai", lat: 13.08, lng: 80.21, address: "3rd Main Rd, Anna Nagar, Chennai, Tamil Nadu 600040", status: "in-use", connectors: ["Type 2 AC"], cost: "₹19/kWh", ports: 5, photos: ["https://placehold.co/600x400/cccccc/ffffff?text=Anna+Nagar"] },
+                { id: 108, name: "OMR Food Street, Chennai", lat: 12.92, lng: 80.23, address: "Old Mahabalipuram Road, Perungudi, Chennai, Tamil Nadu 600096", status: "available", connectors: ["DC Fast"], cost: "₹24/kWh", ports: 8, photos: ["https://placehold.co/600x400/cccccc/ffffff?text=OMR+Food+Street"] },
+                { id: 109, name: "Guindy National Park, Chennai", lat: 13.0, lng: 80.23, address: "Sardar Patel Road, Guindy, Chennai, Tamil Nadu 600022", status: "available", connectors: ["CCS2"], cost: "₹20/kWh", ports: 4, photos: ["https://placehold.co/600x400/cccccc/ffffff?text=Guindy+Park"] },
+                { id: 110, name: "ECR Highway Stop, Chennai", lat: 12.8, lng: 80.24, address: "East Coast Road, Uthandi, Chennai, Tamil Nadu 600119", status: "available", connectors: ["DC Fast"], cost: "₹22/kWh", ports: 3, photos: ["https://placehold.co/600x400/cccccc/ffffff?text=ECR+Stop"] }
+            ];
+            let markers = L.layerGroup().addTo(map);
+            let userMarker;
+            let filteredStations = [...chargingStations];
+
+            const getStatusColor = (status) => status === 'available' ? '#22c55e' : status === 'in-use' ? '#ef4444' : '#6b7280';
+            const getStatusText = (status) => status.replace('-', ' ').replace(/\b\w/g, l => l.toUpperCase());
+            const getStatusTextColor = (status) => status === 'available' ? 'text-green-600' : status === 'in-use' ? 'text-red-600' : 'text-gray-600';
+            
+            const createMarkerIcon = (status, isHighlighted = false) => {
+                const color = getStatusColor(status);
+                const pulseClass = status === 'available' ? 'pulse' : '';
+                const highlightStyle = isHighlighted ? 'transform: scale(1.5); border: 2px solid #f59e0b;' : 'border: 2px solid white;';
+                return L.divIcon({
+                    className: 'custom-div-icon',
+                    html: `<div style="background-color: ${color}; ${highlightStyle}" class="w-5 h-5 rounded-full shadow-lg ${pulseClass} transition-transform flex items-center justify-center"><i class="fas fa-bolt text-white text-xs"></i></div>`,
+                    iconSize: [20, 20],
+                    iconAnchor: [10, 10]
+                });
+            };
+
+            const createPopupContent = (station) => {
+                const connectorsHtml = station.connectors.map(c => `<span class="bg-gray-200 text-gray-800 text-xs font-medium mr-2 px-2.5 py-0.5 rounded-full">${c}</span>`).join('');
+                return `<div class="w-64"> <h3 class="font-bold text-lg mb-2">${station.name}</h3> <img src="${station.photos[0]}" alt="${station.name}" class="rounded-lg mb-2 w-full h-32 object-cover" onerror="this.onerror=null;this.src='https://placehold.co/600x400/cccccc/ffffff?text=Image+Not+Available';"> <div class="space-y-2 text-gray-700"> <p><i class="fas fa-map-marker-alt w-4 mr-1 text-gray-400"></i><span class="text-sm">${station.address}</span></p> <p><i class="fas fa-charging-station w-4 mr-1 text-green-500"></i> <b>Ports:</b> ${station.ports}</p> <p><i class="fas fa-tag w-4 mr-1 text-green-500"></i> <b>Cost:</b> ${station.cost}</p> <div class="flex items-start pt-1"> <i class="fas fa-plug w-4 mr-1 mt-1 text-green-500"></i> <div><b>Types:</b> ${connectorsHtml}</div> </div> </div> <a href="https://www.google.com/maps/dir/?api=1&destination=${station.lat},${station.lng}" target="_blank" class="block w-full text-center bg-green-500 text-white font-bold py-2 px-4 rounded-lg hover:bg-green-600 transition-colors mt-4">Get Directions</a> <div class="mt-4 pt-3 border-t"> <p class="text-xs text-center font-semibold text-gray-500 mb-2">Report Station Status</p> <div class="flex justify-around"> <button class="report-btn text-green-600 hover:text-green-800 transition-transform transform hover:scale-110" data-id="${station.id}" data-status="available" title="Report as working"><i class="fas fa-check-circle fa-2x"></i></button> <button class="report-btn text-red-600 hover:text-red-800 transition-transform transform hover:scale-110" data-id="${station.id}" data-status="in-use" title="Report as in use"><i class="fas fa-times-circle fa-2x"></i></button> <button class="report-btn text-gray-500 hover:text-gray-700 transition-transform transform hover:scale-110" data-id="${station.id}" data-status="out-of-order" title="Report as out of order"><i class="fas fa-exclamation-triangle fa-2x"></i></button> </div> </div> </div>`;
+            };
+            
+            const renderMarkers = (stationsToRender, highlightedIds = new Set()) => {
+                markers.clearLayers();
+                stationsToRender.forEach(station => {
+                    const isHighlighted = highlightedIds.has(station.id);
+                    const marker = L.marker([station.lat, station.lng], { icon: createMarkerIcon(station.status, isHighlighted) });
+                    marker.bindPopup(createPopupContent(station));
+                    markers.addLayer(marker);
+                });
+            };
+
+            const renderList = (stationsToRender) => {
+                if (stationsToRender.length === 0) {
+                    listContent.innerHTML = `<div class="text-center p-10"><i class="fas fa-search-location fa-3x text-gray-400 mb-4"></i><h3 class="font-semibold text-lg text-gray-600">No stations found</h3><p class="text-gray-500">Try adjusting your filters or search term.</p></div>`;
+                    return;
+                }
+                listContent.innerHTML = stationsToRender.map(station => {
+                    return `
+                        <div class="bg-white rounded-xl shadow-sm hover:shadow-lg transition-shadow duration-300 p-4 mb-3 cursor-pointer list-item" data-id="${station.id}" data-lat="${station.lat}" data-lng="${station.lng}">
+                            <div class="flex items-start">
+                                <div class="w-3 h-3 rounded-full mr-4 mt-1" style="background-color: ${getStatusColor(station.status)};"></div>
+                                <div class="flex-grow">
+                                    <h3 class="font-bold text-gray-800">${station.name}</h3>
+                                    <p class="text-xs text-gray-500 mt-1">${station.address}</p>
+                                </div>
+                                <div class="text-right flex-shrink-0 ml-4">
+                                    <p class="font-semibold ${getStatusTextColor(station.status)}">${getStatusText(station.status)}</p>
+                                    <p class="text-sm text-gray-500">${station.ports} Ports</p>
+                                </div>
+                            </div>
+                        </div>
+                    `;
+                }).join('');
+            };
+            
+            const applyAllFilters = (zoomToResults = false) => {
+                const searchTerm = searchInput.value.toLowerCase();
+                
+                const stationsToDisplay = (searchTerm.length < 3) ? chargingStations : chargingStations.filter(station => {
+                    const nameMatch = station.name.toLowerCase().includes(searchTerm);
+                    const addressMatch = station.address.toLowerCase().includes(searchTerm);
+                    return nameMatch || addressMatch;
+                });
+
+                filteredStations = stationsToDisplay.filter(station => {
+                     const statusMatch = currentFilters.status === 'all' || station.status === currentFilters.status;
+                     const connectorMatch = currentFilters.connectors.length === 0 || currentFilters.connectors.every(c => station.connectors.includes(c));
+                     return statusMatch && connectorMatch;
+                });
+                
+                const highlightedIds = (searchTerm.length < 3) ? new Set() : new Set(filteredStations.map(s => s.id));
+                
+                renderMarkers(chargingStations, highlightedIds);
+                renderList(filteredStations);
+
+                if (zoomToResults && filteredStations.length > 0) {
+                    const latLngs = filteredStations.map(station => [station.lat, station.lng]);
+                    const bounds = L.latLngBounds(latLngs);
+                    if (bounds.isValid()) {
+                         map.flyToBounds(bounds, { padding: [50, 50], maxZoom: 14 });
+                    }
+                }
+            };
+            
+            const openFilterModal = () => { filterModal.classList.remove('hidden'); setTimeout(() => filterPanel.classList.remove('filter-modal-enter'), 10); };
+            const closeFilterModal = () => { filterPanel.classList.add('filter-modal-enter'); setTimeout(() => filterModal.classList.add('hidden'), 300); };
+            
+            openFilterBtn.addEventListener('click', openFilterModal);
+            closeFilterBtn.addEventListener('click', closeFilterModal);
+            filterModal.addEventListener('click', (e) => { if (e.target === filterModal) closeFilterModal(); });
+
+            applyFiltersBtn.addEventListener('click', () => {
+                const selectedConnectors = Array.from(document.querySelectorAll('#connector-filter-group input:checked')).map(cb => cb.value);
+                currentFilters.connectors = selectedConnectors;
+                applyAllFilters(true);
+                closeFilterModal();
+            });
+
+            resetFiltersBtn.addEventListener('click', () => {
+                document.querySelectorAll('#connector-filter-group input:checked').forEach(c => c.checked = false);
+                statusFilterGroup.querySelector('[data-status="all"]').click();
+                searchInput.value = "";
+                currentFilters = { status: 'all', connectors: [] };
+                applyAllFilters();
+                closeFilterModal();
+            });
+
+            statusFilterGroup.addEventListener('click', (e) => {
+                const target = e.target.closest('.filter-status-btn');
+                if (!target) return;
+                statusFilterGroup.querySelectorAll('.filter-status-btn').forEach(btn => {
+                    btn.classList.remove('bg-green-500', 'text-white');
+                    btn.classList.add('text-gray-600');
+                });
+                target.classList.add('bg-green-500', 'text-white');
+                target.classList.remove('text-gray-600');
+                currentFilters.status = target.dataset.status;
+            });
+            
+            searchInput.addEventListener('input', () => {
+                applyAllFilters(false);
+            });
+
+            searchInput.addEventListener('keydown', (e) => {
+                if (e.key === 'Enter') {
+                    e.preventDefault();
+                    applyAllFilters(true);
+                }
+            });
+            
+            locateBtn.addEventListener('click', findUserLocation);
+
+            map.on('popupopen', (e) => {
+                const popupNode = e.popup.getElement();
+                popupNode.querySelectorAll('.report-btn').forEach(button => {
+                    button.addEventListener('click', () => {
+                        const stationId = parseInt(button.dataset.id);
+                        const newStatus = button.dataset.status;
+                        const station = chargingStations.find(s => s.id === stationId);
+                        if (station) {
+                            station.status = newStatus;
+                            applyAllFilters();
+                            map.closePopup();
+                            const toast = document.createElement('div');
+                            toast.className = 'fixed top-24 left-1/2 -translate-x-1/2 bg-gray-800 text-white px-4 py-2 rounded-lg shadow-lg z-50';
+                            toast.textContent = 'Thank you for your feedback!';
+                            document.body.appendChild(toast);
+                            setTimeout(() => toast.remove(), 3000);
+                        }
+                    });
+                });
+            });
+
+            viewSwitcher.addEventListener('click', (e) => {
+                const target = e.target.closest('.view-btn');
+                if (!target) return;
+                
+                const selectedView = target.dataset.view;
+                viewSwitcher.querySelectorAll('.view-btn').forEach(btn => {
+                    btn.classList.remove('bg-white', 'text-gray-800', 'shadow');
+                    btn.classList.add('text-gray-600');
+                });
+                target.classList.add('bg-white', 'text-gray-800', 'shadow');
+
+                if (selectedView === 'list') {
+                    listView.classList.remove('translate-x-full');
+                } else {
+                    listView.classList.add('translate-x-full');
+                    setTimeout(() => map.invalidateSize(), 300);
+                }
+            });
+
+            listContent.addEventListener('click', (e) => {
+                const listItem = e.target.closest('.list-item');
+                if (listItem) {
+                    const lat = parseFloat(listItem.dataset.lat);
+                    const lng = parseFloat(listItem.dataset.lng);
+                    
+                    viewSwitcher.querySelector('[data-view="map"]').click();
+                    map.setView([lat, lng], 15);
+
+                    markers.eachLayer(marker => {
+                       if (marker.getLatLng().lat === lat && marker.getLatLng().lng === lng) {
+                           marker.openPopup();
+                       }
+                    });
+                }
+            });
+
+             const funFacts = [
+                "Did you know? The world's highest EV charging station is in India, located in Kaza, Himachal Pradesh, at an altitude of over 12,000 feet! 🏔⚡",
+                "Go Green, Save Green! On average, running an EV in India can be up to 80% cheaper per kilometer than a petrol car. Your wallet will thank you! 💰",
+                "India's on a Mission! India aims for 30% of all private cars to be electric by 2030. You're part of a massive green revolution! 🚀",
+                "Local Power! Many components for EVs, including batteries, are now being manufactured right here in India under the 'Make in India' initiative. 🇮🇳💪",
+                "Older than you think! The first electric car was invented way back in the 1830s, long before the first petrol-powered car. EVs are classic tech, reimagined! 🕰🚗",
+                "Need for Speed? EVs have instant torque, meaning they can accelerate faster off the line than many powerful sports cars. That's some silent power! 🏎💨",
+                "Brake to Boost! Thanks to 'regenerative braking,' your EV recharges its battery a little every time you slow down. It's like creating free fuel! 🔄🔋",
+                "Quiet, Right? EVs are so quiet that they are legally required to produce a sound at low speeds to alert pedestrians. You're driving in stealth mode! 🤫",
+                "Power Your Home! Some EVs can power your house during an outage using Vehicle-to-Grid (V2G) technology. Your car is a power bank on wheels! 🏠⚡",
+                "Low Maintenance Life! Electric cars have no engine oil, spark plugs, or exhaust systems. That means fewer trips to the mechanic and more time on the road! 🔧👍",
+                "Breathe Easier! A single electric car can save an average of 1.5 million grams of CO2 per year. That's like planting over 60 trees! 🌳",
+                "You're a Hero! By driving an EV and using this app to find a charger, you're directly helping to reduce air pollution in our cities. Thank you! 🦸‍♂️🦸‍♀️",
+                "Community Power! Every time you 'check-in' or update a charger's status, you're helping another EV driver. That's the power of community! 🙌"
+            ];
+            
+            const showFactBomb = () => {
+                const randomIndex = Math.floor(Math.random() * funFacts.length);
+                factText.textContent = funFacts[randomIndex];
+                factBombModal.classList.remove('hidden');
+                factBombModal.querySelector('div').classList.add('bomb-shake');
+            };
+
+            const closeFactBomb = () => {
+                factBombModal.querySelector('div').classList.remove('bomb-shake');
+                factBombModal.classList.add('hidden');
+            };
+
+            closeFactBombBtn.addEventListener('click', closeFactBomb);
+            factBombModal.addEventListener('click', (e) => {
+                if (e.target === factBombModal) {
+                    closeFactBomb();
+                }
+            });
+
+            applyAllFilters();
+        });
+    </script>
+</body>
+</html>
+
